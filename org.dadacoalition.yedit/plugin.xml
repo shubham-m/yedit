@@ -137,5 +137,18 @@
     </target>
  </extension>
    
+ <extension
+         point="org.eclipse.ui.newWizards">
+      <category
+            name="YAML File"
+            id="YAML">
+      </category>
+      <wizard
+            name="YAML File"
+            category="YAML"
+            class="shubhamm.yedit.wizards.NewYAMLWizard"
+            id="shubhamm.yedit.NewYAMLWizard">
+      </wizard>
+   </extension>
 
 </plugin>
