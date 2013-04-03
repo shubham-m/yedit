@@ -82,7 +82,10 @@ public class IncompleteYamlParser {
 				
 				if(value!=null && value.length()>0)
 				{
-					path.add(leaf);
+					if(leaf!=null)
+					{
+						path.add(leaf);
+					}
 					leaf = value;
 				}
 				else
@@ -103,8 +106,6 @@ public class IncompleteYamlParser {
 		
 		else if(event instanceof MappingStartEvent)
 		{
-			path.add("#map");
-			
 			HashMap<String,Object> map = new HashMap<String,Object>();
 			
 			if(leaf instanceof String)
@@ -112,6 +113,8 @@ public class IncompleteYamlParser {
 				path.add(leaf); //If map is named add name to path
 				leaf = null;
 			}
+			
+			path.add("#map");
 			
 			try
 			{

@@ -54,7 +54,7 @@ public class YAMLSchemaCompletionProcessor
 	public YAMLSchemaCompletionProcessor()
 	{
 		schemaParser = new Yaml();
-		//schemaPath = "";
+		schemaPath = "";
 		schema = new HashMap();
 	}
     
