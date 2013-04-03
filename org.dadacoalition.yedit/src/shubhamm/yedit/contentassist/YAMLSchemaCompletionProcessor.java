@@ -5,7 +5,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
 import java.io.StringReader;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -44,149 +47,135 @@ public class YAMLSchemaCompletionProcessor
 
 	private Map schema;
 	private IncompleteYamlParser parser;
-	private Yaml yaml;
+	private Yaml schemaParser;
 	private String schemaPath;
+	private BufferedReader reader;
     
 	public YAMLSchemaCompletionProcessor()
 	{
-		yaml = new Yaml();
-		schemaPath = "";
+		schemaParser = new Yaml();
+		//schemaPath = "";
 		schema = new HashMap();
 	}
     
 	public List<ICompletionProposal> computeCompletionProposalsFromSchema(ITextViewer viewer,int offset) 
 	{
-		
+		List<ICompletionProposal> completionProposals = new ArrayList<ICompletionProposal>();
 		try 
 		{
-			
 			String extract = viewer.getDocument().get(0,offset);
-			String indent = getIndent(extract);
+			schema = readSchemaFile(extract);
 			
-			StringReader stringReader = new StringReader(extract);
-			BufferedReader reader = new BufferedReader(stringReader);
-			String firstLine = reader.readLine();
-			if(firstLine != null)
+			if(schema!=null)
 			{
-				String[] splits = firstLine.split("\\s");
-				if(splits[0].equalsIgnoreCase("#SCHEMA"))
-				{
-					readSchemaFromFile(splits[1]);
-				}
-				else
-				{
-					return new ArrayList<ICompletionProposal>();
-				}
-			}
-			else
-			{
-				return new ArrayList<ICompletionProposal>();
-			}
-			
-			parser = new IncompleteYamlParser();
-			Object extracted = parser.construct(reader);
-			
-			IEditorPart editor = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().getActiveEditor();
-			IFileEditorInput input = (IFileEditorInput)editor.getEditorInput() ;
-			IFile file = input.getFile();
-			
-			try {
-				file.deleteMarkers(IMarker.PROBLEM, true, IResource.DEPTH_INFINITE);
-			} catch (CoreException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			
-			if( parser.exception != null)
-			{
-				int lineNo = parser.exception.getProblemMark().getLine() + 1;
-				int lastOffset = viewer.getDocument().getLineInformation(lineNo).getOffset()+parser.exception.getProblemMark().getColumn();
-				if(lastOffset<offset)
-				{
-					markError(parser.exception,lastOffset);
-					return new ArrayList<ICompletionProposal>();
-				}
-			}
-			
-			
-			if(extracted instanceof String)
-			{
-				extracted = new HashMap().put(extracted, null);
-			}
-			
-			LinkedList path = parser.path;
-			String leaf = parser.leaf;
-			
-			if(schema instanceof Map)
-			{
-				String schemaType = (String) ((Map) ((Map)schema).get("root")).get("type");
+				parser = new IncompleteYamlParser();
+				parser.construct(reader);
+				Object extracted = parser.getConstructedYaml();
 				
-				if((leaf == null || leaf.length()==0) && path.peekLast() instanceof String && !((String)path.peekLast()).startsWith("#") )
+				boolean preMature = checkPrematureTermination(viewer, offset);
+				
+				if(!preMature)
 				{
-					leaf = (String) path.removeLast();
+					extracted = normalizeExtracted(extracted);
+					
+					LinkedList path = parser.getPath();
+					String leaf = parser.getLeaf();
+					
+					path = normalizePath(path);
+					
+					setWorkbenchStatus(path+" "+leaf);
+					
+					completionProposals.addAll(getProposals(path.listIterator(),(Map) extracted,offset,getIndent(extract)));
 				}
-				
-//				if(!( (path.isEmpty()) || (path.peekLast() instanceof Integer) || ((String)path.peekLast()).equals("#map")))
-//				{
-//					throw new Error();
-//				}
-				//Path if not empty will end with #map or a number only
-				
-				//if()
-				{
-					if(schemaType.equals("map"))
-					{
-						if( !path.isEmpty() && (path.get(0).toString()).equals("#map") )
-						{
-							path.addFirst("root");
-						}
-						else
-						{
-							path.addFirst("#map");
-							path.addFirst("root");
-						}
-					}
-					else if(schemaType.equals("seq"))
-					{
-						if( !path.isEmpty() && (path.get(0).toString()).equals("#seq") )
-						{
-							path.addFirst("root");
-						}
-						else
-						{
-							path.addFirst("#seq");
-							path.addFirst("root");
-						}
-					}
-				}
-				
 			}
-			
-			setWorkbenchStatus(path+" "+leaf);
-			System.out.println(path+" "+leaf);
-			
-			return getProposals(path.listIterator(),(Map) extracted,leaf,offset,indent);
-			//return new ArrayList<ICompletionProposal>();
 			
 		}
 		catch (BadLocationException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		} 
 		
-		return new ArrayList<ICompletionProposal>();
+		return completionProposals;
 	}
 
-	private void markError(ParserException exception, int lastOffset){
-		System.out.println(exception.getProblem());
-		try 
+	private boolean checkPrematureTermination(ITextViewer viewer, int offset)
+	{
+		boolean preMature = false;
+		
+		try
 		{
 			IEditorPart editor = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().getActiveEditor();
 			IFileEditorInput input = (IFileEditorInput)editor.getEditorInput() ;
 			IFile file = input.getFile();
+
+			file.deleteMarkers(IMarker.PROBLEM, true, IResource.DEPTH_INFINITE);
+			
+			if( parser.getLastException() != null)
+			{
+				int lineNo = parser.getLastException().getProblemMark().getLine() + 1;
+				int lastOffset = viewer.getDocument().getLineInformation(lineNo).getOffset()+parser.getLastException().getProblemMark().getColumn();
+				if(lastOffset<offset)
+				{
+					markError(file,parser.getLastException(),lastOffset);
+					preMature = true;
+				}
+			}
+		}
+		catch (BadLocationException ex) {
+			ex.printStackTrace();
+		}
+		catch (CoreException ex) {
+			ex.printStackTrace();
+		}
+		
+		return preMature;
+	}
+
+	private Object normalizeExtracted(Object extracted) {
+		if(extracted instanceof String)
+		{
+			extracted = new HashMap().put(extracted, null);
+		}
+		return extracted;
+	}
+
+	private LinkedList normalizePath(LinkedList path) {
+		if(schema instanceof Map)
+		{
+			String schemaType = (String) ((Map) ((Map)schema).get("root")).get("type");
+			
+			if(schemaType.equals("map"))
+			{
+				if( !path.isEmpty() && (path.get(0).toString()).equals("#map") )
+				{
+					path.addFirst("root");
+				}
+				else
+				{
+					path.addFirst("#map");
+					path.addFirst("root");
+				}
+			}
+			else if(schemaType.equals("seq"))
+			{
+				if( !path.isEmpty() && (path.get(0).toString()).equals("#seq") )
+				{
+					path.addFirst("root");
+				}
+				else
+				{
+					path.addFirst("#seq");
+					path.addFirst("root");
+				}
+			}
+							
+		}
+		return path;
+	}
+
+	private void markError(IFile file,ParserException exception, int lastOffset){
+		System.out.println(exception.getProblem());
+		try 
+		{
 			IMarker marker = file.createMarker(IMarker.PROBLEM);
 			marker.setAttribute(IMarker.SEVERITY, IMarker.SEVERITY_ERROR);
 			int lineNumber = exception.getProblemMark().getLine() + 2;
@@ -196,79 +185,115 @@ public class YAMLSchemaCompletionProcessor
 			marker.setAttribute(IMarker.CHAR_END, lastOffset+1);
 			marker.getAttributes();
 		} 
-		catch (CoreException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+		catch (CoreException ex) {
+			ex.printStackTrace();
 		}
 		
 		
 	}
 
-	private void readSchemaFromFile(String path) 
+	private Map readSchemaFile(String extract) 
 	{
+		Map schemaMap = null;
 		try
 		{
-			if(!schemaPath.equals(path))
+			StringReader stringReader = new StringReader(extract);
+			reader = new BufferedReader(stringReader);
+			String firstLine = reader.readLine();
+			if(firstLine != null)
 			{
-				schemaPath = path;
-				File schemaFile = new File(path);
-				schema = (Map) yaml.load(new FileInputStream(schemaFile));
+				String[] splits = firstLine.split("\\s");
+				if(splits[0].equalsIgnoreCase("#SCHEMA"))
+				{
+					InputStream schemaInputStream = null;
+					String type = splits[1];
+					String pathInfo = "";
+					if(type.equals("URL"))
+					{
+						pathInfo = splits[2];
+						schemaInputStream =  new URL(pathInfo).openStream();
+					}
+					else if(type.equals("JAR"))
+					{
+						pathInfo = splits[2];
+						schemaInputStream = this.getClass().getClassLoader().getResourceAsStream(pathInfo);					
+					}
+					else
+					{
+						if(type.equals("FILE"))
+						{
+							pathInfo = splits[2];
+						}
+						else
+						{
+							pathInfo = type;
+						}
+						schemaInputStream = new FileInputStream(pathInfo);
+					}
+					
+					
+					if(schemaPath.equals(pathInfo)) //Path Info of different types won't look same
+					{
+						schemaMap = schema;
+					}
+					else
+					{
+						schemaPath = pathInfo;
+						schemaMap = (Map) schemaParser.load(schemaInputStream);
+					}
+					
+				}
 			}
 		}
-		catch(FileNotFoundException ex)
+		catch(IOException ex)
 		{
-			System.out.println("No Such Schema File \n"+ex.getMessage());
+			System.out.println("Error Reading Schema \n"+ex.getMessage());
 		}
-		catch(Exception ex)
-		{
-			schema = new HashMap();
-		}
+		return schemaMap;
 	}
 
 
-	private void setWorkbenchStatus(final String path) {
-		////////
+	private void setWorkbenchStatus(final String message) 
+	{
+		System.out.println(message);
+		
 		final Display display = Display.getDefault();
 
-		new Thread() {
+		new Thread() 
+		{
 
-		public void run() {
-
-		display.syncExec(new Runnable() {
-		/*
-		* (non-Javadoc)
-		*
-		* @see java.lang.Runnable#run()
-		*/
-		public void run() {
-
-		IWorkbench wb = PlatformUI.getWorkbench();
-		IWorkbenchWindow win = wb.getActiveWorkbenchWindow();
-
-		IWorkbenchPage page = win.getActivePage();
-
-		IWorkbenchPart part = page.getActivePart();
-		IWorkbenchPartSite site = part.getSite();
-
-		EditorSite vSite = ( EditorSite ) site;
-
-		IActionBars actionBars =  vSite.getActionBars();
-
-		if( actionBars == null )
-		return ;
-
-		IStatusLineManager statusLineManager =
-		 actionBars.getStatusLineManager();
-
-		if( statusLineManager == null )
-		return ;
-
-		statusLineManager.setMessage( path );
-		}
-		});
-		}
+			public void run() 
+			{
+	
+				display.syncExec(new Runnable() {
+					public void run() {
+			
+						IWorkbench wb = PlatformUI.getWorkbench();
+						IWorkbenchWindow win = wb.getActiveWorkbenchWindow();
+				
+						IWorkbenchPage page = win.getActivePage();
+				
+						IWorkbenchPart part = page.getActivePart();
+						IWorkbenchPartSite site = part.getSite();
+				
+						EditorSite vSite = ( EditorSite ) site;
+				
+						IActionBars actionBars =  vSite.getActionBars();
+				
+						if( actionBars == null )
+						return ;
+				
+						IStatusLineManager statusLineManager =
+						 actionBars.getStatusLineManager();
+				
+						if( statusLineManager == null )
+						return ;
+				
+						statusLineManager.setMessage( message );
+					}
+				});
+			}
 		}.start();
-		////////
 	}
 	
 	private String getIndent(String extract) 
@@ -282,13 +307,14 @@ public class YAMLSchemaCompletionProcessor
 	}
 
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	List<ICompletionProposal> getProposals(ListIterator path,Map extracted,String leaf,int offset, String indent)
+	List<ICompletionProposal> getProposals(ListIterator path,Map extracted,int offset, String indent)
 	{
 		List<ICompletionProposal> list = new ArrayList<ICompletionProposal>(); 
 		Object node = schema;
 		Object edge = null;
 		Object defaultNode = null;
 		String unknownEdge = null;
+		String leaf = parser.getLeaf();
 		while(path.hasNext())
 		{
 			edge=path.next();
@@ -513,9 +539,9 @@ public class YAMLSchemaCompletionProcessor
 	private boolean isUnique(String key, Map extracted) 
 	{
 		ArrayList<String> path = new ArrayList<String>();
-		for(int i=2;i<parser.path.size();i++)
+		for(int i=2;i<parser.getPath().size();i++)
 		{
-			Object node = parser.path.get(i);
+			Object node = parser.getPath().get(i);
 			if(node instanceof String && !((String)node).startsWith("#"))
 			{
 				path.add((String) node);
@@ -621,7 +647,7 @@ public class YAMLSchemaCompletionProcessor
 
 	private String[] absPath(String[] edges) {
 		String[] absPath = null;
-		List path = parser.path;
+		List path = parser.getPath();
 		int up = 0;
 		if(edges[0].equals("#path"))
 		{

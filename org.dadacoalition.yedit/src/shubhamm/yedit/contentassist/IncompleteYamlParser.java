@@ -1,13 +1,10 @@
 package shubhamm.yedit.contentassist;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.Reader;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.ListIterator;
 
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.events.AliasEvent;
@@ -23,26 +20,46 @@ import org.yaml.snakeyaml.parser.ParserException;
 
 public class IncompleteYamlParser {
 	
-	public LinkedList path = new LinkedList();
-	public String leaf = null;
-	public List<String> anchorList = new ArrayList();
-	public ParserException exception;
+	private LinkedList path = new LinkedList();
+	private String leaf = null;
+	private List<String> anchorList = new ArrayList();
+	private ParserException lastException = null;
 	private boolean incomplete;
+	private Object constructedYaml;
 	
-	public Object construct(Reader reader)
+	public LinkedList getPath() {
+		return path;
+	}
+
+	public String getLeaf() {
+		return leaf==null?"":leaf;
+	}
+
+	public List<String> getAnchorList() {
+		return anchorList;
+	}
+
+	public ParserException getLastException() {
+		return lastException;
+	}
+
+	public boolean isIncomplete() {
+		return incomplete;
+	}
+
+	public Object getConstructedYaml() {
+		return constructedYaml;
+	}
+	
+	public void construct(Reader reader)
 	{
 		Yaml yaml = new Yaml();
 		Iterator<Event> events = yaml.parse(reader).iterator();
-		events.next();
-		events.next();
-		Object constructed =  construct(events);
-		if(leaf == null)
-		{
-			leaf = "";
-		}
-		return constructed;
+		events.next(); // Skip processing StreamStartEvent
+		events.next(); // Skip processing DocumentStartEvent
+		constructedYaml =  construct(events);
 	}
-	
+
 	private Object construct(Iterator<Event> events)
 	{
 		Event currentEvent = events.next();
@@ -62,46 +79,49 @@ public class IncompleteYamlParser {
 			try
 			{
 				String value = ((ScalarEvent) event).getValue();
-				if(leaf == null)
-				{
-					leaf = value;
-				}
-				else if(value.length()>0)
+				
+				if(value!=null && value.length()>0)
 				{
 					path.add(leaf);
 					leaf = value;
 				}
-				else if(value.equals(""))
+				else
 				{
 					value = null;
 				}
+				
 				return value;
 			}
 			catch(ParserException e)
 			{ 
 				incomplete = true; 
-				exception = e;
+				lastException = e;
 				return null; 
 			}
 			
 		}
+		
 		else if(event instanceof MappingStartEvent)
 		{
+			path.add("#map");
+			
 			HashMap<String,Object> map = new HashMap<String,Object>();
+			
 			if(leaf instanceof String)
 			{
-				path.add(leaf);
+				path.add(leaf); //If map is named add name to path
 				leaf = null;
 			}
-			/*extra*/path.add("#map");
+			
 			try
 			{
 				event = laterEvents.next();
 				while( !(event instanceof MappingEndEvent) && !incomplete )
 				{
-					String key = ((ScalarEvent) event).getValue();
+					String key = ((ScalarEvent) event).getValue(); //Complex Keys Not Supported
 					leaf = key;
 					Object value = null;
+					
 					try
 					{
 						value = construct(laterEvents);
@@ -109,12 +129,13 @@ public class IncompleteYamlParser {
 					catch(ParserException e)
 					{
 						incomplete = true;
-						exception = e;
+						lastException = e;
 					}
+					
 					if(value==null)
 					{
 						path.add(leaf);
-						/*extra*/path.add("#value");
+						path.add("#value");
 						leaf = null;
 						incomplete = true;
 					}
@@ -122,6 +143,7 @@ public class IncompleteYamlParser {
 					{
 						map.put(key,value);
 					}
+					
 					if(!incomplete)
 					{
 						event = laterEvents.next(); //Check for premature end before popping path
@@ -135,7 +157,7 @@ public class IncompleteYamlParser {
 			}
 			catch(ParserException e)
 			{ 
-				if(e.getProblemMark().get_snippet().matches(".*,\\s*\\^$"))
+				if(e.getProblemMark().get_snippet().matches(".*,\\s*\\^$")) //Check if parsing ended after paring a ','
 				{
 					leaf=null;
 				}
@@ -152,11 +174,12 @@ public class IncompleteYamlParser {
 					}
 				}
 				incomplete = true;
-				exception = e;
+				lastException = e;
 			}
+			
 			if(!incomplete)
 			{
-				/*extra*/path.removeLast();
+				path.removeLast();
 				if(path.peekLast() instanceof String && !path.peekLast().toString().startsWith("#"))
 				{
 					path.removeLast();
@@ -166,6 +189,7 @@ public class IncompleteYamlParser {
 			return map;
 			
 		}
+		
 		else if(event instanceof SequenceStartEvent)
 		{
 			ArrayList list = new ArrayList();
@@ -174,7 +198,7 @@ public class IncompleteYamlParser {
 				path.add(leaf);
 				leaf = null;
 			}
-			/*extra*/path.add("#seq");
+			path.add("#seq");
 			path.add(1);
 			try
 			{
@@ -188,7 +212,7 @@ public class IncompleteYamlParser {
 					
 					if(!incomplete)
 					{
-						nextEvent = laterEvents.next();
+						nextEvent = laterEvents.next(); //Check for premature end before popping path
 						Object idx = path.removeLast();
 						Integer index = (Integer) idx;
 						path.add(++index);
@@ -207,13 +231,13 @@ public class IncompleteYamlParser {
 					leaf=null;
 				}
 				incomplete = true;
-				exception = e;
+				lastException = e;
 			}
 			if(!incomplete)
 			{
 				leaf = null;
-				path.removeLast(); //Pops out index
-				/*extra*/path.removeLast(); //Pops out #seq 
+				path.removeLast(); //Pops out the index
+				path.removeLast(); //Pops out #seq 
 				if(path.peekLast() instanceof String && !path.peekLast().toString().startsWith("#"))
 				{
 					path.removeLast(); //Pops out list name if any
@@ -221,10 +245,7 @@ public class IncompleteYamlParser {
 			}
 			return list;
 		}
-		else if(event instanceof AliasEvent)
-		{
-			
-		}
+		
 		return null;
 	}
 
