@@ -213,11 +213,6 @@ public class YAMLSchemaCompletionProcessor
 						pathInfo = splits[2];
 						schemaInputStream =  new URL(pathInfo).openStream();
 					}
-					else if(type.equals("JAR"))
-					{
-						pathInfo = splits[2];
-						schemaInputStream = this.getClass().getClassLoader().getResourceAsStream(pathInfo);					
-					}
 					else
 					{
 						if(type.equals("FILE"))
@@ -310,6 +305,8 @@ public class YAMLSchemaCompletionProcessor
 	List<ICompletionProposal> getProposals(ListIterator path,Map extracted,int offset, String indent)
 	{
 		List<ICompletionProposal> list = new ArrayList<ICompletionProposal>(); 
+		
+		//Object node = tracePathInSchema(path,leaf,schema);
 		Object node = schema;
 		Object edge = null;
 		Object defaultNode = null;
@@ -402,7 +399,7 @@ public class YAMLSchemaCompletionProcessor
 				{
 					suggestion = ((Map)node).get(next);
 				}
-				if(isUnique(next,extracted) && next.startsWith(leaf) && qualifiesOnlyWhen(suggestion,extracted))
+				if(isUnique(next,extracted) && next.startsWith(leaf) && qualifiesOnlyWhenCondition(suggestion,extracted))
 				{
 					System.out.println(next);
 					
@@ -583,7 +580,7 @@ public class YAMLSchemaCompletionProcessor
 		return node;
 	}
 
-	private boolean qualifiesOnlyWhen(Object suggestion, Map extracted) {
+	private boolean qualifiesOnlyWhenCondition(Object suggestion, Map extracted) {
 		
 		if(suggestion!= null && suggestion instanceof Map && ((Map)suggestion).get("onlyWhen")!=null)
 		{
@@ -677,12 +674,7 @@ public class YAMLSchemaCompletionProcessor
 					absPath[idx] = (String)edge;
 				}
 			}
-			for (int i = up; i < edges.length; i++) 
-			{
-				//absPath[idx] = edges[i];
-			}
 		}
-		//return absPath;
 		return null;
 	}
 
