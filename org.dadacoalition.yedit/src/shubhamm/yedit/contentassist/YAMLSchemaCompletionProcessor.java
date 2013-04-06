@@ -1,12 +1,9 @@
 package shubhamm.yedit.contentassist;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.Reader;
 import java.io.StringReader;
 import java.net.URL;
 import java.util.ArrayList;
@@ -42,6 +39,7 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.parser.ParserException;
 
 
+@SuppressWarnings("rawtypes")
 public class YAMLSchemaCompletionProcessor 
 {
 
@@ -81,7 +79,7 @@ public class YAMLSchemaCompletionProcessor
 					LinkedList path = parser.getPath();
 					String leaf = parser.getLeaf();
 					
-					path = normalizePath(path);
+//					path = normalizePath(path);
 					
 					setWorkbenchStatus(path+" "+leaf);
 					
@@ -130,7 +128,8 @@ public class YAMLSchemaCompletionProcessor
 		return preMature;
 	}
 
-	private Object normalizeExtracted(Object extracted) {
+	private Object normalizeExtracted(Object extracted) 
+	{
 		if(extracted instanceof String)
 		{
 			extracted = new HashMap().put(extracted, null);
@@ -138,39 +137,6 @@ public class YAMLSchemaCompletionProcessor
 		return extracted;
 	}
 
-	private LinkedList normalizePath(LinkedList path) {
-		if(schema instanceof Map)
-		{
-			String schemaType = (String) ((Map) ((Map)schema).get("root")).get("type");
-			
-			if(schemaType.equals("map"))
-			{
-				if( !path.isEmpty() && (path.get(0).toString()).equals("#map") )
-				{
-					path.addFirst("root");
-				}
-				else
-				{
-					path.addFirst("#map");
-					path.addFirst("root");
-				}
-			}
-			else if(schemaType.equals("seq"))
-			{
-				if( !path.isEmpty() && (path.get(0).toString()).equals("#seq") )
-				{
-					path.addFirst("root");
-				}
-				else
-				{
-					path.addFirst("#seq");
-					path.addFirst("root");
-				}
-			}
-							
-		}
-		return path;
-	}
 
 	private void markError(IFile file,ParserException exception, int lastOffset){
 		System.out.println(exception.getProblem());
@@ -301,8 +267,7 @@ public class YAMLSchemaCompletionProcessor
 		return indent;
 	}
 
-	@SuppressWarnings({ "rawtypes", "unchecked" })
-	List<ICompletionProposal> getProposals(ListIterator path,Map extracted,int offset, String indent)
+	List<ICompletionProposal> getProposals(ListIterator path,Object extracted,int offset, String indent)
 	{
 		List<ICompletionProposal> list = new ArrayList<ICompletionProposal>(); 
 		
@@ -345,6 +310,7 @@ public class YAMLSchemaCompletionProcessor
 						unknownEdge = edge.toString();
 						continue;
 					}
+					edge = "#value";
 				}
 			}
 			else if(edge instanceof Integer)
@@ -372,7 +338,7 @@ public class YAMLSchemaCompletionProcessor
 				node = defaultNode;
 			}
 			
-			if(node instanceof Map && !(edge.toString()).startsWith("#") )
+			if(node instanceof Map && (edge.equals("#value") || !(edge.toString()).startsWith("#")) )
 			{
 				defaultNode = ((Map)node).get("default");
 			}
@@ -533,54 +499,35 @@ public class YAMLSchemaCompletionProcessor
 		return list;
 	}
 
-	private boolean isUnique(String key, Map extracted) 
+	private boolean isUnique(String key, Object extracted) 
 	{
-		ArrayList<String> path = new ArrayList<String>();
-		for(int i=2;i<parser.getPath().size();i++)
+		if(extracted instanceof Map)
 		{
-			Object node = parser.getPath().get(i);
-			if(node instanceof String && !((String)node).startsWith("#"))
+			ArrayList<String> path = new ArrayList<String>();
+			for(int i=2;i<parser.getPath().size();i++)
 			{
-				path.add((String) node);
+				Object node = parser.getPath().get(i);
+				if(node instanceof String && !((String)node).startsWith("#"))
+				{
+					path.add((String) node);
+				}
+				else if(node instanceof Integer)
+				{
+					path.add("#"+node);
+				}
 			}
-			else if(node instanceof Integer)
+			String[] pathArr = new String[path.size()];;
+			pathArr = path.toArray(pathArr);
+			Object parent = readMapFromPath(extracted, pathArr);
+			if(parent instanceof Map && ((Map)parent).containsKey(key))
 			{
-				path.add("#"+node);
+				return false;
 			}
-		}
-		String[] pathArr = new String[path.size()];;
-		pathArr = path.toArray(pathArr);
-		Object parent = readMapFromPath(extracted, pathArr);
-		if(parent instanceof Map && ((Map)parent).containsKey(key))
-		{
-			return false;
 		}
 		return true;
 	}
 
-	private Object processNode(Object node) 
-	{
-		String type = (String) ((Map)node).get("type");	
-		if(type.equals("map"))
-		{
-			Map map = (Map) ((Map)node).get("mapping");
-			if(!map.isEmpty())
-			{
-				node = map;
-			}
-		}
-		else if(type.equals("seq"))
-		{
-			ArrayList sequence = (ArrayList) ((Map)node).get("sequence");
-			if(!sequence.isEmpty())
-			{
-				node = sequence;
-			}
-		}
-		return node;
-	}
-
-	private boolean qualifiesOnlyWhenCondition(Object suggestion, Map extracted) {
+	private boolean qualifiesOnlyWhenCondition(Object suggestion, Object extracted) {
 		
 		if(suggestion!= null && suggestion instanceof Map && ((Map)suggestion).get("onlyWhen")!=null)
 		{
@@ -591,7 +538,7 @@ public class YAMLSchemaCompletionProcessor
 				String fromExtract = null;
 				try 
 				{
-					fromExtract = readMap(extracted,((List)condition).get(0));
+					fromExtract = readExtract(extracted,((List)condition).get(0));
 				} 
 				catch (Exception e) 
 				{
@@ -606,7 +553,7 @@ public class YAMLSchemaCompletionProcessor
 		return true;
 	}
 
-	private String readMap(Map extracted, Object key) throws Exception {
+	private String readExtract(Object extracted, Object key) throws Exception {
 		Object value = extracted;
 		try
 		{

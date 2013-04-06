@@ -8,6 +8,7 @@ import java.util.List;
 
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.events.AliasEvent;
+import org.yaml.snakeyaml.events.CollectionStartEvent;
 import org.yaml.snakeyaml.events.Event;
 import org.yaml.snakeyaml.events.MappingEndEvent;
 import org.yaml.snakeyaml.events.MappingStartEvent;
@@ -21,14 +22,20 @@ import org.yaml.snakeyaml.parser.ParserException;
 public class IncompleteYamlParser {
 	
 	private LinkedList path = new LinkedList();
+	private LinkedList ambiguouslyRemoved = new LinkedList();
 	private String leaf = null;
 	private List<String> anchorList = new ArrayList();
 	private ParserException lastException = null;
 	private boolean incomplete;
 	private Object constructedYaml;
+	private String type = null;
 	
 	public LinkedList getPath() {
-		return path;
+		if(!path.isEmpty())
+		{
+			return path;
+		}
+		return ambiguouslyRemoved;
 	}
 
 	public String getLeaf() {
@@ -54,6 +61,7 @@ public class IncompleteYamlParser {
 	public void construct(Reader reader)
 	{
 		Yaml yaml = new Yaml();
+		path.add("root");
 		Iterator<Event> events = yaml.parse(reader).iterator();
 		events.next(); // Skip processing StreamStartEvent
 		events.next(); // Skip processing DocumentStartEvent
@@ -72,6 +80,11 @@ public class IncompleteYamlParser {
 		if(event instanceof NodeEvent && !(event instanceof AliasEvent) && ((NodeEvent)event).getAnchor()!=null)
 		{
 			anchorList.add(((NodeEvent)event).getAnchor());
+		}
+		
+		if(event instanceof NodeEvent)
+		{
+			ambiguouslyRemoved.clear();
 		}
 		
 		if(event instanceof ScalarEvent)
@@ -182,12 +195,19 @@ public class IncompleteYamlParser {
 			
 			if(!incomplete)
 			{
-				path.removeLast();
+				ambiguouslyRemoved.addFirst(path.removeLast());
 				if(path.peekLast() instanceof String && !path.peekLast().toString().startsWith("#"))
 				{
-					path.removeLast();
+					ambiguouslyRemoved.addFirst(path.removeLast());
 				}
 				leaf = null;
+				
+				//If the mapping end was not marked by '}' then remember it as an ambiguous end
+				MappingEndEvent mappingEnd = (MappingEndEvent) event;
+				if(mappingEnd.getEndMark().getIndex() != mappingEnd.getStartMark().getIndex() )
+				{
+					ambiguouslyRemoved.clear();
+				}
 			}
 			return map;
 			
@@ -203,9 +223,10 @@ public class IncompleteYamlParser {
 			}
 			path.add("#seq");
 			path.add(1);
+			Event nextEvent = null;
 			try
 			{
-				Event nextEvent = laterEvents.next();
+				nextEvent = laterEvents.next();
 				while(!incomplete && !(nextEvent instanceof SequenceEndEvent))
 				{
 					leaf = null;
@@ -239,12 +260,19 @@ public class IncompleteYamlParser {
 			if(!incomplete)
 			{
 				leaf = null;
-				path.removeLast(); //Pops out the index
-				path.removeLast(); //Pops out #seq 
+				ambiguouslyRemoved.addFirst(path.removeLast()); //Pops out the index
+				ambiguouslyRemoved.addFirst(path.removeLast()); //Pops out #seq 
 				if(path.peekLast() instanceof String && !path.peekLast().toString().startsWith("#"))
 				{
-					path.removeLast(); //Pops out list name if any
+					ambiguouslyRemoved.addFirst(path.removeLast()); //Pops out list name if any
 				}
+				//If the mapping end was not marked by '}' then remember it as an ambiguous end
+				SequenceEndEvent seqEnd = (SequenceEndEvent) nextEvent;
+				if(seqEnd.getEndMark().getIndex() != seqEnd.getStartMark().getIndex() )
+				{
+					ambiguouslyRemoved.clear();
+				}
+				
 			}
 			return list;
 		}
