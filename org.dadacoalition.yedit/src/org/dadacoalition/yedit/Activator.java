@@ -16,7 +16,7 @@ import org.osgi.framework.BundleContext;
 public class Activator extends AbstractUIPlugin {
 
 	// The plug-in ID
-	public static final String PLUGIN_ID = "org.dadacoalition.yedit";
+	public static final String PLUGIN_ID = "yedit";
 	
 	public static final String TEMPLATE_STORE_ID = PLUGIN_ID + ".template";
 

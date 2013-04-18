@@ -382,13 +382,13 @@ public class YAMLSchemaCompletionProcessor
 						String type = (String) ((Map)suggestion).get("type");
 						if(type!=null && type.equals("map"))
 						{
-							replacementString+= ": {\n"+indent+"  \n"+indent+"}, ";
-							cursorPosFromReplaceStart += 6 + indent.length();
+							replacementString+= ": ";
+							cursorPosFromReplaceStart += 2;
 						}
 						else if(type!=null && type.equals("seq"))
 						{
-							replacementString+= ": [\n"+indent+"  \n"+indent+"], ";
-							cursorPosFromReplaceStart += 6 + indent.length();
+							replacementString+= ": ";
+							cursorPosFromReplaceStart += 2;
 						}
 //						else if(type!=null && type.equals("str"))
 //						{
@@ -442,7 +442,7 @@ public class YAMLSchemaCompletionProcessor
 			String type = (String) ((Map)node).get("type");
 			if(type.equals("map"))
 			{
-				String replacementString = "{  }, ";
+				String replacementString = "{  }";
 				String displayName = "{..}";
 				String extraInfo = "Insert an empty Map";
 				int overwriteLength = 0;
@@ -452,7 +452,7 @@ public class YAMLSchemaCompletionProcessor
 			}
 			else if(type.equals("seq"))
 			{
-				String replacementString = "[  ], ";
+				String replacementString = "[  ]";
 				String displayName = "[..]";
 				String extraInfo = "Insert an empty List";
 				int overwriteLength = 0;
@@ -469,7 +469,7 @@ public class YAMLSchemaCompletionProcessor
 					if(enumVal.startsWith(leaf))
 					{
 						System.out.println(enumVal);
-						String replacementString = enumVal+ ", ";
+						String replacementString = enumVal;
 						String extraInfo = null;
 						int overwriteLength = leaf.length();
 						int replaceStartsAt = offset-overwriteLength;
