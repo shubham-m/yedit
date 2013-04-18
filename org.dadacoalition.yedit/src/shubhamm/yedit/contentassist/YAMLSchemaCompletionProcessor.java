@@ -36,7 +36,8 @@ import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.internal.EditorSite;
 import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.parser.ParserException;
+import org.yaml.snakeyaml.error.MarkedYAMLException;
+import org.yaml.snakeyaml.scanner.ScannerException;
 
 
 @SuppressWarnings("rawtypes")
@@ -111,7 +112,7 @@ public class YAMLSchemaCompletionProcessor
 			{
 				int lineNo = parser.getLastException().getProblemMark().getLine() + 1;
 				int lastOffset = viewer.getDocument().getLineInformation(lineNo).getOffset()+parser.getLastException().getProblemMark().getColumn();
-				if(lastOffset<offset)
+				if(lastOffset<offset || parser.getLastException() instanceof ScannerException)
 				{
 					markError(file,parser.getLastException(),lastOffset);
 					preMature = true;
@@ -138,7 +139,7 @@ public class YAMLSchemaCompletionProcessor
 	}
 
 
-	private void markError(IFile file,ParserException exception, int lastOffset){
+	private void markError(IFile file,MarkedYAMLException exception, int lastOffset){
 		System.out.println(exception.getProblem());
 		try 
 		{
@@ -590,12 +591,13 @@ public class YAMLSchemaCompletionProcessor
 	}
 
 	private String[] absPath(String[] edges) {
-		String[] absPath = null;
+		List<String> absPath = new ArrayList<String>();
 		List path = parser.getPath();
 		int up = 0;
+		int i;
 		if(edges[0].equals("#path"))
 		{
-			for(int i=1;i<edges.length;i++)
+			for(i=1;i<edges.length;i++)
 			{
 				if(edges[i].equals("#parent"))
 				{
@@ -607,22 +609,28 @@ public class YAMLSchemaCompletionProcessor
 				}
 			}
 			int pathLength = (path.size() - up) + (edges.length - up - 1 );
-			absPath = new String[ pathLength ];
-			int idx = 0;
+			int idx = 1;
 			for (; idx < (path.size() - up); idx++) 
 			{
 				Object edge = path.get(idx);
+				
 				if(edge instanceof Integer)
 				{
-					absPath[idx] = "#"+(Integer)edge;
+					absPath.add("#"+(Integer)edge);
 				}
 				else
 				{
-					absPath[idx] = (String)edge;
+					if(((String) edge).startsWith("#")) continue;
+					absPath.add((String)edge);
 				}
 			}
+			for(;i<edges.length;i++)
+			{
+				absPath.add((String)edges[i]);
+			}
 		}
-		return null;
+		String[] pathArr = new String[absPath.size()];
+		return absPath.toArray(pathArr);
 	}
 
 }

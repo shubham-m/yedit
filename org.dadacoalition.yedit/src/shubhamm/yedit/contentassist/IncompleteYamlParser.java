@@ -7,6 +7,7 @@ import java.util.LinkedList;
 import java.util.List;
 
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.error.MarkedYAMLException;
 import org.yaml.snakeyaml.events.AliasEvent;
 import org.yaml.snakeyaml.events.CollectionStartEvent;
 import org.yaml.snakeyaml.events.Event;
@@ -25,7 +26,7 @@ public class IncompleteYamlParser {
 	private LinkedList ambiguouslyRemoved = new LinkedList();
 	private String leaf = null;
 	private List<String> anchorList = new ArrayList();
-	private ParserException lastException = null;
+	private MarkedYAMLException lastException = null;
 	private boolean incomplete;
 	private Object constructedYaml;
 	private String type = null;
@@ -46,7 +47,7 @@ public class IncompleteYamlParser {
 		return anchorList;
 	}
 
-	public ParserException getLastException() {
+	public MarkedYAMLException getLastException() {
 		return lastException;
 	}
 
@@ -65,7 +66,14 @@ public class IncompleteYamlParser {
 		Iterator<Event> events = yaml.parse(reader).iterator();
 		events.next(); // Skip processing StreamStartEvent
 		events.next(); // Skip processing DocumentStartEvent
-		constructedYaml =  construct(events);
+		try
+		{
+			constructedYaml =  construct(events);
+		}
+		catch(MarkedYAMLException ex)
+		{
+			lastException = ex;
+		}
 	}
 
 	private Object construct(Iterator<Event> events)
